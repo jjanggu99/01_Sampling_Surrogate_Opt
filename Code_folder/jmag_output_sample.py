@@ -18,7 +18,12 @@ def jmag_output_sample(sim_input, pathset, sample_savepath):
 
     div_jproj_folderpath = os.path.join(pathset.projfolder_path, pathset.divjprojfolder_name)
     div_jproj_filename = pathset.jmag_filename
-    initialize_and_copy_jproj(pathset.jmag_dir, div_jproj_folderpath, div_jproj_filename, num_proj)
+
+    j_base_name, j_extension = pathset.jmag_filename.rsplit('.', 1)
+    c_base_name, c_extension = pathset.Final_INsample_filename.rsplit('.', 1)
+    r_base_name, r_extension = pathset.Final_OUTsample_filename.rsplit('.', 1)
+    
+
 
     divcase_folderpath = os.path.join(pathset.case_dir, pathset.seq_divsamplefolder_name)
     divcase_filename = pathset.Final_INsample_filename
@@ -26,9 +31,14 @@ def jmag_output_sample(sim_input, pathset, sample_savepath):
     divresult_filename = pathset.Final_OUTsample_filename
     case_div_merge.case_divide(sample_savepath, divcase_folderpath, divcase_filename, num_proj)
 
-    j_base_name, j_extension = pathset.jmag_filename.rsplit('.', 1)
-    c_base_name, c_extension = pathset.Final_INsample_filename.rsplit('.', 1)
-    r_base_name, r_extension = pathset.Final_OUTsample_filename.rsplit('.', 1)
+    # 아 이거 여기서 하면 안되네;.......!!!!시;밞ㄴ'에래ㅓㅁ니ㅑㅏㄹ허ㅗㅁ유ㅏㅣㄹ휴포ㅓㄴ우러ㅑㅏㅎ
+    finaldiv_j_file_name = f'{j_base_name}_div{num_proj}.{j_extension}'
+    if os.path.exists(os.path.join(div_jproj_folderpath, finaldiv_j_file_name)):
+        print('Already jproj divided!!!')
+        pass
+    else:
+        initialize_and_copy_jproj(pathset.jmag_dir, div_jproj_folderpath, div_jproj_filename, num_proj)
+
     start_time = time.time()
     print('jmag submit start!!!')
     for i in range(1, num_proj + 1):
@@ -49,20 +59,12 @@ def jmag_output_sample(sim_input, pathset, sample_savepath):
                     app, _ = initialize_jmag_app()
                     app.Load(div_jproj_path)
                     study_num = app.GetModel(0).NumStudies()
-                    # 1. 결과값 있는지?? 있으면 2-1, 없으면 2-2
-                    jmag_case_input(app, div_jproj_path, div_case_path)
-                    print(f'{i}th jmag case intput complete!!!')
-                    for j in range(study_num):
-                        isresult = jmag_isallresult(app, study_num)
-                        app, _ = initialize_jmag_app()
-                        print(isresult)
-                        # 2-1. 결과값 있으니, csv파일로 저장
-                        if isresult == True and j == study_num-1:
-                            print('jmag result O, csv results X')
-                            div_result = jmag_resultscheck(app, sim_input, div_jproj_path, div_result_path)
-                            break
-                        # 2-2. 결과값이 X,  submit 시작.
-                        elif isresult == False:
+                    # 1. case 수가 세팅 case수랑 동일하게 있는지? 아니면 다시 caseintput - 이 때는 결과값은 당연히 없음.
+                    if app.GetModel(0).GetStudy(0).GetDesignTable().NumCases() != sim_input.lhs_sample_num / sim_input.lhs_sample_division:
+                        jmag_case_input(app, div_jproj_path, div_case_path)
+                        print(f'{i}th jmag case intput complete!!!')
+                        # 1-1. case 수가 다름. 결과값 없단 소리임. submit 하자.
+                        for j in range(study_num):
                             if sim_input.analysis_type_all[j] in sim_input.analysis_type_selection:
                                 job = app.GetModel(0).GetStudy(j).CreateJob()
                                 job.SetValue(u"Title", sim_input.analysis_type_all[j])
@@ -70,20 +72,44 @@ def jmag_output_sample(sim_input, pathset, sample_savepath):
                                 job.SetValue(u"DeleteScratch", True)
                                 job.SetValue(u"PreProcessOnWrite", True)
                                 job.Submit(True)
-                    print(f'{i}th div_project submit complete!')
+                        print(f'{i}th div_project submit complete!') 
+
+                    # 2. case가 모두 존재. 그럼 result 존재 여부 check
+                    else:
+                        for j in range(study_num):
+                            isresult = jmag_isallresult(app, study_num)
+                            app, _ = initialize_jmag_app()
+                            # 2-2. case 존재 O, result 존재 O, csv 존재 X
+                            if isresult == True and j == study_num-1:
+                                print('jmag result O, csv results X')
+                                jmag_resultscheck(app, sim_input, div_jproj_path, div_result_path)
+                                break
+                            # 2-1. case 존재 O, result 존재 X, csv 존재 X
+                            #jmag_resultscheck(app, sim_input, div_jproj_path, div_result_path)
+                            elif isresult == False:
+                                if sim_input.analysis_type_all[j] in sim_input.analysis_type_selection:
+                                    job = app.GetModel(0).GetStudy(j).CreateJob()
+                                    job.SetValue(u"Title", sim_input.analysis_type_all[j])
+                                    job.SetValue(u"Queued", True)
+                                    job.SetValue(u"DeleteScratch", True)
+                                    job.SetValue(u"PreProcessOnWrite", True)
+                                    job.Submit(True)
+                        print(f'{i}th div_project submit complete!')
                     app.Save()
                     print('jmag save!')
                     app.Quit()
                     print('jmag Quit!')
                     break
-
                 except Exception as e:
                     print(f"Error: {e}, retrying...")
                     time.sleep(3)
                     retry_count += 1
                     app, _ = initialize_jmag_app()
                     if app is None:
-                        raise RuntimeError("Failed to initialize JMAG application.")
+                        raise RuntimeError("Failed to initialize JMAG application.")                    
+                
+
+
                 
     app, jobapp = initialize_jmag_app()
     job = app.GetModel(0).GetStudy(6).CreateJob()
