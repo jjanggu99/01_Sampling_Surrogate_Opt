@@ -122,12 +122,16 @@ def jmag_resultscheck(app, sim_input, jproj_path, output_filepath):
     #만약 output 경로에 파일이 있으면, 그 파일 읽어서 리턴
     if os.path.exists(output_filepath):
         result = pd.read_csv(output_filepath)
+        print('exist')
     #없으면 아래 결과값 추출 코드 진행.
     else:
-        #app, _ = initialize_jmag_app()
+        app, _ = initialize_jmag_app()
         if app is None:
+            print('Fuck!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
             return
         app.Load(jproj_path)
+        print('jmag_resultscheck start')
+
         app.GetAnalysisGroup(0).CheckForNewResults()
         # Machine Characteristics (Efficiency Map)에서 OP_N_Torque 불러오기
         app.SetCurrentStudy(0)
